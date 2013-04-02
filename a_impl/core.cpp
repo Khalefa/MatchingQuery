@@ -10,7 +10,6 @@
 using namespace std;
 
 typedef unordered_set<string> word_list;
-typedef unordered_set<pair<string,int>> word_q_list;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 /*******************/
@@ -171,6 +170,7 @@ void GetWords(const char *doc_str,word_list *words){
 int CheckExactQuery(Query *quer, word_list &not_found_words){
 	int iq=0;
 	int matching_query=true;
+	char curr_qword[MAX_WORD_LENGTH+2];
 	while(quer->str[iq] && matching_query)
 	{
 		while(quer->str[iq]==' ') iq++;
@@ -178,12 +178,13 @@ int CheckExactQuery(Query *quer, word_list &not_found_words){
 		char* qword=&quer->str[iq];
 
 		int lq=iq;
-		while(quer->str[iq] && quer->str[iq]!=' ') iq++;
+		while(quer->str[iq] && quer->str[iq]!=' '){curr_qword[iq-lq+1]=quer->str[iq]; iq++;}
 		char qt=quer->str[iq];
 		quer->str[iq]=0;
 		lq=iq-lq;
-
-		if(not_found_words.find(qword)!=not_found_words.end()) {
+		curr_qword[0]='A'+quer->match_type*3+quer->match_dist;
+		string s_curr_qword(curr_qword);
+		if(not_found_words.find(s_curr_qword)!=not_found_words.end()) {
 			matching_query=false;
 			quer->str[iq]=qt;
 			break;
@@ -201,20 +202,22 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 
 	word_list words[MAX_WORD_LENGTH-MIN_WORD_LENGTH];
 	word_list not_found_words;
-	word_q_list found_words;
+	word_list found_words;
 
 	GetWords(doc_str, words);
+	int skipped_queries=0;
 	// Iterate on all active queries to compare them with this new document
 	for(i=0;i<n;i++)
 	{
 		bool matching_query=true;
 		Query* quer=&queries[i];
 		//fail quickly if any word of query is in not_found
-		if(quer->match_type==MT_EXACT_MATCH) 
-			matching_query=CheckExactQuery(quer,not_found_words);
-		if(!matching_query) continue;
+		//if(quer->match_type==MT_EXACT_MATCH) 
+		matching_query=CheckExactQuery(quer,not_found_words);
+		if(!matching_query) {printf("skip %d" , quer->query_id);skipped_queries ++; continue;}
 
 		int iq=0;
+		char curr_qword[MAX_WORD_LENGTH+2];
 		while(quer->str[iq] && matching_query)
 		{
 			while(quer->str[iq]==' ') iq++;
@@ -222,27 +225,28 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 			char* qword=&quer->str[iq];
 
 			int lq=iq;
-			while(quer->str[iq] && quer->str[iq]!=' ') iq++;
+			while(quer->str[iq] && quer->str[iq]!=' '){curr_qword[iq-lq+1]=quer->str[iq]; iq++;}
 			char qt=quer->str[iq];
-			quer->str[iq]=0;
+			curr_qword[iq-lq+1]=quer->str[iq]=0;
 			lq=iq-lq;
 
 			bool matching_word=false;
 			//first try exact match; even if it is not the case
-			//Word Query pair
-			pair<string, int> wqp(qword,quer->match_type*3+quer->match_dist);
-			if(found_words.find(wqp)!=found_words.cend()) 
+			curr_qword[0]='A'+quer->match_type*3+quer->match_dist;
+			string s_curr_qword(curr_qword);
+//			printf("%s %s\n", qword, curr_qword);
+			if(found_words.find(s_curr_qword)!=found_words.cend()) 
 				matching_word=true;
 			
 			if(!matching_word && words[lq-MIN_WORD_LENGTH].find(qword)!=words[lq-MIN_WORD_LENGTH].end()) {
 				matching_word=true;
-				found_words.insert(qword);
+				found_words.insert(s_curr_qword);
 			}
 			if(!matching_word && quer->match_type!=MT_EXACT_MATCH) {
 				for(unordered_set<string>::const_iterator it=words[lq-MIN_WORD_LENGTH].cbegin(); it!=words[lq-MIN_WORD_LENGTH].cend();it++){
 					if(cmp(it->c_str(),qword,lq,quer->match_dist)) {
 						matching_word=true;
-						found_words.insert(it->c_str());
+						found_words.insert(s_curr_qword);//it->c_str()
 						break;
 					}
 				}
@@ -258,7 +262,7 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 						unsigned int edit_dist=oldEditDistance(qword, lq, it->c_str(), it->length(),quer->match_dist);
 						if(edit_dist<=quer->match_dist) {
 							matching_word=true; 
-							found_words.insert(it->c_str());
+							found_words.insert(s_curr_qword);//it->c_str());
 							break;
 						}			
 
@@ -269,9 +273,9 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 				// This query has a word that does not match any word in the document
 				matching_query=false;
 
-				if(quer->match_type==MT_EXACT_MATCH){
-					not_found_words.insert(qword);
-				}
+				//if(quer->match_type==MT_EXACT_MATCH){
+					not_found_words.insert(s_curr_qword);
+				//}
 			}
 			quer->str[iq]=qt;
 		}/*while(quer->str[iq] && matching_query)*/
@@ -281,7 +285,8 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 			query_ids.push_back(quer->query_id);
 		}
 	}
-
+	printf("not_found_words %d found_words%d\n", not_found_words.size(), found_words.size());
+	printf("skipped %d n %d\n", skipped_queries, n);
 	Document doc;
 	doc.doc_id=doc_id;
 	doc.num_res=query_ids.size();
