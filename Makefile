@@ -57,7 +57,7 @@ testdriver: lib $(TEST_O)
 
 submission:
 	rm -f impl.tar.gz
-	tar -czvf impl.tar.gz $(IMPL)/core.cpp
+	tar -czvf impl.tar.gz $(IMPL)/core.cpp $(IMPL)/impl.h 
 clean:
 	rm -f $(PROGRAMS) lib$(LIBRARY).so
 	find . -name '*.o' -print | xargs rm -f
