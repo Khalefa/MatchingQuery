@@ -1,52 +1,40 @@
-#include "core.h"
-#include <cstring>
-#include <string>
-#include <cstdlib>
-#include <utility>
-#include <iostream>
-#include <cstdio>
-#include <vector>
-#include <unordered_set>
-using namespace std;
+#include "impl.h"
+
+inline int min(int a, int b){
+return a>b?b:a;
+}
+inline int max(int a, int b){
+return a>b?a:b;
+}
+//map value of word 
+// 00 00 exact match value 0
+// 01 01 hamming 1  value 5
+// 01 10 hamming 2   value 6
+// 01 11 hamming 3   value 7
+// 10 01 edit distance 1   value 9
+// 10 10 edit distance 2   value 10
+// 10 11 edit distance 3   value 11
+inline char word_map_value(Query *q){
+	return q->match_type*4+q->match_dist;
+}
+//word a and b are said to be inclusive 
+//not found 0 does not help, check not found for greater value
+// but if not found is 3 lower would help
+inline int notfoundcheck(int map_val, Query *q){
+	int q_val=word_map_value(q);
+	if (map_val>q_val) return false;
+	return true;  
+}
+
+//if word with value 1 is in found word with value greater is found too 
+inline int foundcheck(int map_val, Query *q){
+	int q_val=word_map_value(q);
+	if (map_val>=q_val) return false;
+	return true;  
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
-/*******************/
-int min(int a, int b, int c){
-	int m=(a>b)?b:a;
-	m=(c>m)?m:c;
-	return m;
-}
-int editDistance(const char *a, int na, const char * b, int nb, int k) {
-	int oo=10;
-
-	static int H[31+1];
-	int top = k +1;
-	for (int i=0;i<=nb;i++)  H[i] = i;	
-	for(int j=1;j<=na;j++){
-		int  c = 0;
-		for(int i=1;i<=top;i++){
-			int e=c;
-			if(a[i-1]!=b[j-1]) e=min(H[i-1], H[i], c)+1;
-			c=H[i];H[i]=e;
-		}
-		while (H[top] >k)  top--;
-		if (top == nb ) 
-			return H[top];
-
-		else top++;
-	}
-	return oo;
-}
-int EditDistance(const char *a, int na, const char * b, int nb, int k) {
-	int diff=nb-na;
-	if (diff<0) diff=-diff;
-	if(diff>k) return 100;
-
-	if(na>nb) 
-		return	editDistance(a, na, b,nb,  k);
-	else return editDistance(b, nb, a,na,  k);
-}
-int oldEditDistance(const char* a, int na, const char* b, int nb, int limit)
+int EditDistance(const char* a, int na, const char* b, int nb, int limit)
 {
 	int oo=10;
 	int diff=nb-na;
@@ -65,13 +53,14 @@ int oldEditDistance(const char* a, int na, const char* b, int nb, int limit)
 
 	cur=1-cur;
 
+	int stop_b=limit;
 	for(ia=1;ia<=na;ia++)
 	{
 		for(ib=0;ib<=nb;ib++)
 			T[cur][ib]=oo;
-
 		int ib_st=0;
-		int ib_en=nb;
+		stop_b++;
+		int ib_en=min(stop_b, nb);
 
 		if(ib_st==0)
 		{
@@ -86,12 +75,13 @@ int oldEditDistance(const char* a, int na, const char* b, int nb, int limit)
 
 			int d1=T[1-cur][ib]+1;
 			int d2=T[cur][ib-1]+1;
-			int d3=T[1-cur][ib-1]; if(a[ia-1]!=b[ib-1]) d3++;
+			int d3=T[1-cur][ib-1]; 
+			if(a[ia-1]!=b[ib-1]) d3++;
 
 			if(d1<ret) ret=d1;
 			if(d2<ret) ret=d2;
 			if(d3<ret) ret=d3;
-			if(ret<min)min=ret;
+			if(ret<min) min=ret;
 			T[cur][ib]=ret;
 		}
 		if(min>limit) return limit+1;
@@ -103,28 +93,6 @@ int oldEditDistance(const char* a, int na, const char* b, int nb, int limit)
 	return ret;
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////
-
-
-// Keeps all information related to an active query
-struct Query
-{
-	QueryID query_id;
-	char str[MAX_QUERY_LENGTH];
-	vector<string> qwords;
-	MatchType match_type;
-	unsigned int match_dist;
-};
-
-///////////////////////////////////////////////////////////////////////////////////////////////
-
-// Keeps all query ID results associated with a dcoument
-struct Document
-{
-	DocID doc_id;
-	unsigned int num_res;
-	QueryID* query_ids;
-};
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -185,7 +153,6 @@ inline int cmp(const char *a, const char *b, int l, int dist){
 	}
 	return !fail;
 }
-typedef unordered_set<string> word_list;
 
 void GetWords(const char *doc_str,word_list *words){
 	int id=0;
@@ -201,7 +168,7 @@ void GetWords(const char *doc_str,word_list *words){
 	}
 }
 
-int CheckExactQuery(Query *quer, word_list &not_found_words){
+int CheckQuery(Query *quer, word_map &not_found_words){
 	int iq=0;
 	int matching_query=true;
 	while(quer->str[iq] && matching_query)
@@ -215,11 +182,16 @@ int CheckExactQuery(Query *quer, word_list &not_found_words){
 		char qt=quer->str[iq];
 		quer->str[iq]=0;
 		lq=iq-lq;
-
-		if(not_found_words.find(qword)!=not_found_words.end()) {
-			matching_query=false;
-			quer->str[iq]=qt;
-			break;
+		word_map::iterator it=not_found_words.find(qword);
+		if(it!=not_found_words.end()) {
+			// a candidate is found
+//			if (it->second != word_map_value(quer))
+//				printf("%d %d\n", it->second,word_map_value(quer));
+			if(it->second == word_map_value(quer)){ //>= is better but need to invistage
+				matching_query=false;
+				quer->str[iq]=qt;
+				break;
+			}
 		}
 		quer->str[iq]=qt;
 	}
@@ -233,7 +205,7 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 	vector<unsigned int> query_ids;
 
 	word_list words[MAX_WORD_LENGTH-MIN_WORD_LENGTH];
-	word_list not_found_words;
+	word_map not_found_words;
 	word_list found_words;
 
 	GetWords(doc_str, words);
@@ -243,8 +215,8 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 		bool matching_query=true;
 		Query* quer=&queries[i];
 		//fail quickly if any word of query is in not_found
-		if(quer->match_type==MT_EXACT_MATCH) 
-			matching_query=CheckExactQuery(quer,not_found_words);
+		//if(quer->match_type==MT_EXACT_MATCH) 
+			matching_query=CheckQuery(quer,not_found_words);
 		if(!matching_query) continue;
 
 		int iq=0;
@@ -286,7 +258,7 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 
 				for(int len=s_length; len <=e_length && !matching_word;len++){
 					for(unordered_set<string>::const_iterator it=words[len-MIN_WORD_LENGTH].cbegin(); it!=words[len-MIN_WORD_LENGTH].cend();it++){
-						unsigned int edit_dist=oldEditDistance(qword, lq, it->c_str(), it->length(),quer->match_dist);
+						unsigned int edit_dist=EditDistance(qword, lq, it->c_str(), it->length(),quer->match_dist);
 						if(edit_dist<=quer->match_dist) {
 							matching_word=true; 
 							found_words.insert(it->c_str());
@@ -300,9 +272,14 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 				// This query has a word that does not match any word in the document
 				matching_query=false;
 
-				if(quer->match_type==MT_EXACT_MATCH){
-					not_found_words.insert(qword);
-				}
+//				if(quer->match_type==MT_EXACT_MATCH){
+					char q_val=word_map_value(quer);
+					word_map::iterator it=not_found_words.find(qword);
+					if(it==not_found_words.end())
+						not_found_words.insert(make_pair<string,char> (qword,q_val));
+					else 
+						it->second=max(it->second, q_val);
+//				}
 			}
 			quer->str[iq]=qt;
 		}/*while(quer->str[iq] && matching_query)*/
