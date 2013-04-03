@@ -9,10 +9,43 @@
 #include <unordered_set>
 using namespace std;
 
-typedef unordered_set<string> word_list;
-
 ///////////////////////////////////////////////////////////////////////////////////////////////
 /*******************/
+int min(int a, int b, int c){
+	int m=(a>b)?b:a;
+	m=(c>m)?m:c;
+	return m;
+}
+int editDistance(const char *a, int na, const char * b, int nb, int k) {
+	int oo=10;
+
+	static int H[31+1];
+	int top = k +1;
+	for (int i=0;i<=nb;i++)  H[i] = i;	
+	for(int j=1;j<=na;j++){
+		int  c = 0;
+		for(int i=1;i<=top;i++){
+			int e=c;
+			if(a[i-1]!=b[j-1]) e=min(H[i-1], H[i], c)+1;
+			c=H[i];H[i]=e;
+		}
+		while (H[top] >k)  top--;
+		if (top == nb ) 
+			return H[top];
+
+		else top++;
+	}
+	return oo;
+}
+int EditDistance(const char *a, int na, const char * b, int nb, int k) {
+	int diff=nb-na;
+	if (diff<0) diff=-diff;
+	if(diff>k) return 100;
+
+	if(na>nb) 
+		return	editDistance(a, na, b,nb,  k);
+	else return editDistance(b, nb, a,na,  k);
+}
 int oldEditDistance(const char* a, int na, const char* b, int nb, int limit)
 {
 	int oo=10;
@@ -152,6 +185,7 @@ inline int cmp(const char *a, const char *b, int l, int dist){
 	}
 	return !fail;
 }
+typedef unordered_set<string> word_list;
 
 void GetWords(const char *doc_str,word_list *words){
 	int id=0;
@@ -200,7 +234,7 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 
 	word_list words[MAX_WORD_LENGTH-MIN_WORD_LENGTH];
 	word_list not_found_words;
-	word_q_list found_words;
+	word_list found_words;
 
 	GetWords(doc_str, words);
 	// Iterate on all active queries to compare them with this new document
@@ -228,9 +262,7 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 
 			bool matching_word=false;
 			//first try exact match; even if it is not the case
-			//Word Query pair
-			pair<string, int> wqp(qword,quer->match_type*3+quer->match_dist);
-			if(found_words.find(wqp)!=found_words.cend()) 
+			if(found_words.find(qword)!=found_words.cend()) 
 				matching_word=true;
 			
 			if(!matching_word && words[lq-MIN_WORD_LENGTH].find(qword)!=words[lq-MIN_WORD_LENGTH].end()) {
