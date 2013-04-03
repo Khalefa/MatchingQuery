@@ -10,7 +10,6 @@
 using namespace std;
 
 typedef unordered_set<string> word_list;
-typedef unordered_set<pair<string,int>> word_q_list;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 /*******************/

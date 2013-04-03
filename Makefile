@@ -36,7 +36,7 @@ IMPL_O=$(IMPL)/core.o
 CC  = gcc
 CXX = g++
 #-O3 -fPIC -Wall  - -pthread -lpthread
-CFLAGS=-O3 -fPIC -std=c++11 -fopenmp -Wall -g -I. -I./include
+CFLAGS=-O3 -fPIC -std=gnu++0x -fopenmp -Wall -g -I. -I./include
 CXXFLAGS=$(CFLAGS)
 LDFLAGS=-lpthread
 
