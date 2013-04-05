@@ -36,7 +36,7 @@ IMPL_O=$(IMPL)/core.o
 CC  = gcc
 CXX = g++
 #-O3 -fPIC -Wall  - -pthread -lpthread
-CFLAGS=-O3 -fPIC -std=gnu++0x -fopenmp -Wall -g -I. -I./include
+CFLAGS=-O3 -fPIC -std=c++11 -fopenmp -pthread -lpthread -Wall -g -I. -I./include
 CXXFLAGS=$(CFLAGS)
 LDFLAGS=-lpthread
 
@@ -57,7 +57,7 @@ testdriver: lib $(TEST_O)
 
 submission:
 	rm -f impl.tar.gz
-	tar -czvf impl.tar.gz $(IMPL)/core.cpp
+	tar -czvf impl.tar.gz $(IMPL)/core.cpp $(IMPL)/impl.h
 clean:
 	rm -f $(PROGRAMS) lib$(LIBRARY).so
 	find . -name '*.o' -print | xargs rm -f
