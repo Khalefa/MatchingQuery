@@ -29,7 +29,7 @@
 
 # Build targets (your implementation targets should go in IMPL_O)
 TEST_O=test_driver/test.o 
-IMPL=a_impl
+IMPL=ref_impl
 IMPL_O=$(IMPL)/core.o
 
 # Compiler flags

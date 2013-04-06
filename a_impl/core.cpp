@@ -226,6 +226,8 @@ void AddtoFoundWord(word_map &word_list,const char *word, Query *q){
 
 ErrorCode MatchDocument_singlethread(DocID doc_id, const char* doc_str)
 {
+	unique_lock<mutex> lock(xmutex);
+	
 	unsigned int i, n=queries.size();
 	vector<unsigned int> query_ids;
 
@@ -324,7 +326,6 @@ ErrorCode MatchDocument_singlethread(DocID doc_id, const char* doc_str)
 			query_ids.push_back(quer->query_id);
 		}
 	}
-	unique_lock<mutex> lock(xmutex);
 	Document doc;
 	doc.doc_id=doc_id;
 	doc.num_res=query_ids.size();
