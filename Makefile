@@ -29,11 +29,11 @@
 
 # Build targets (your implementation targets should go in IMPL_O)
 TEST_O=test_driver/test.o 
-IMPL=a_impl
-IMPL_O=$(IMPL)/core.o
+IMPL=ref_impl
+IMPL_O=$(IMPL)/core.o $(IMPL)/pth.o  
 
 # Compiler flags
-CC  = gcc
+CC  = g++
 CXX = g++
 #-O3 -fPIC -Wall  - -pthread -lpthread
 CFLAGS=-O3 -fPIC -std=gnu++0x -fopenmp -Wall -g -I. -I./include
@@ -50,14 +50,14 @@ LIBRARY=core
 all: $(PROGRAMS)
 
 lib: $(IMPL_O)
-	$(CXX) $(CXXFLAGS) -shared -pthread -o lib$(LIBRARY).so $(IMPL_O)
+	$(CXX) $(CXXFLAGS) -shared  -o lib$(LIBRARY).so $(IMPL_O)
 
 testdriver: lib $(TEST_O)
 	$(CXX) $(CXXFLAGS) -o testdriver $(TEST_O) ./lib$(LIBRARY).so
 
 submission:
 	rm -f impl.tar.gz
-	tar -czvf impl.tar.gz $(IMPL)/core.cpp $(IMPL)/impl.h 
+	tar -czvf impl.tar.gz $(IMPL)/core.cpp $(IMPL)/pth.c $(IMPL)/pth.h
 clean:
 	rm -f $(PROGRAMS) lib$(LIBRARY).so
 	find . -name '*.o' -print | xargs rm -f

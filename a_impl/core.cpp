@@ -1,5 +1,7 @@
 #include "impl.h"
 #include <utility>
+#include <bitset>
+
 inline int min(int a, int b){
 	return a>b?b:a;
 }
@@ -159,8 +161,9 @@ inline int cmp(const char *a, const char *b, int l, int dist){
 	return !fail;
 }
 
-void GetWords(const char *doc_str,word_list *words){
+void GetWords(const char *doc_str,word_list *words,  bitset<32> &lengths){
 	int id=0;
+	long long count=0;
 	char word[MAX_WORD_LENGTH+1];
 	while(doc_str[id]) {
 		while(doc_str[id]==' ') id++;
@@ -169,10 +172,22 @@ void GetWords(const char *doc_str,word_list *words){
 		while(doc_str[id] && doc_str[id]!=' '){word[id-ld]=doc_str[id]; id++;}
 		word[id-ld]=0;
 		ld=id-ld;
-		words[ld-MIN_WORD_LENGTH].insert(word);
-	}
-}
+		count++;
+	 	if (lengths[ld-MIN_WORD_LENGTH])
+	 	       words[ld-MIN_WORD_LENGTH].insert(word);
 
+	}
+	printf("CC %lld\n", count);
+}
+void PrintWordsHist(word_list *words){
+float total=0;
+for(int i=MIN_WORD_LENGTH;i<=MAX_WORD_LENGTH;i++)
+	total+=words[i-MIN_WORD_LENGTH].size();
+for(int i=MIN_WORD_LENGTH;i<=MAX_WORD_LENGTH;i++)
+	if (words[i-MIN_WORD_LENGTH].size()>0)
+	printf("%d %ld (%f)\n" ,i, words[i-MIN_WORD_LENGTH].size(),total);
+
+}
 int CheckQuery(Query *quer, word_map &not_found_words){
 	int iq=0;
 	int matching_query=true;
@@ -192,7 +207,7 @@ int CheckQuery(Query *quer, word_map &not_found_words){
 			// a candidate is found
 			int q_val= word_map_value(quer);
 			if (q_val>0) q_val= !notfoundcheck(it->second,q_val);
-			if(q_val ==0 ){ //>= is better but need to invistage
+			if(q_val ==0 ){ 
 				//if (it->second!=word_map_value(quer) )printf("%s %d %d\n", it->first.c_str(),it->second,word_map_value(quer));
 				matching_query=false;
 				quer->str[iq]=qt;
@@ -214,6 +229,26 @@ void AddtoFoundWord(word_map &word_list,const char *word, Query *q){
 			it->second= q_val;
 
 }
+void QueryLength(Query *quer, bitset<32>  &lengths){
+	int iq=0;
+	while(quer->str[iq]) {
+		while(quer->str[iq]==' ') iq++;
+		if(!quer->str[iq]) break;
+		
+		int lq=iq;
+		while(quer->str[iq] && quer->str[iq]!=' ') iq++;
+		char qt=quer->str[iq];
+		quer->str[iq]=0;
+		lq=iq-lq;
+		
+		if (quer->match_type==MT_EDIT_DIST) {
+			for(int i=max(lq-quer->match_dist,MIN_WORD_LENGTH);i<=min(lq+quer->match_dist,MAX_WORD_LENGTH);i++)
+				lengths.set(i-MIN_WORD_LENGTH);
+		} else 
+			lengths.set(lq-MIN_WORD_LENGTH);
+		quer->str[iq]=qt;
+	}
+}
 
 ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 {
@@ -223,9 +258,15 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 	word_list words[MAX_WORD_LENGTH-MIN_WORD_LENGTH];
 	word_map not_found_words;
 	word_map found_words;
+	bitset<32> lengths;
 
-	GetWords(doc_str, words);
-	// Iterate on all active queries to compare them with this new document
+       for(i=0;i<n;i++) {
+	 Query* quer=&queries[i];
+  	QueryLength(quer,lengths);
+      }
+    //cout << doc_id << " "<<lengths <<endl;
+    GetWords(doc_str, words, lengths);	// Iterate on all active queries to compare them with this new document
+PrintWordsHist(words);
 	for(i=0;i<n;i++)
 	{
 		bool matching_query=true;
@@ -250,7 +291,7 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 			bool matching_word=false;
 			//first try exact match; even if it is not the case
 			word_map::iterator mit;
-
+			//if(quer->match_type==MT_EXACT_MATCH)
 			if((mit=found_words.find(qword))!=found_words.cend()) {
 				int q_val = word_map_value(quer);
 				if ( mit->second == q_val || mit->second==0){
@@ -264,7 +305,7 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 				}
 
 			}
-
+			//if(quer->match_type==MT_EXACT_MATCH)
 			if(!matching_word && words[lq-MIN_WORD_LENGTH].find(qword)!=words[lq-MIN_WORD_LENGTH].end()) {
 				matching_word=true;
 				AddtoFoundWord(found_words, qword, quer);
@@ -289,10 +330,9 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 						unsigned int edit_dist=EditDistance(qword, lq, it->c_str(), it->length(),quer->match_dist);
 						if(edit_dist<=quer->match_dist) {
 							matching_word=true; 
-							AddtoFoundWord(found_words,qword /*it->c_str()*/, quer);
+							AddtoFoundWord(found_words,qword, quer);
 							break;
 						}			
-
 					}
 				}
 			}
