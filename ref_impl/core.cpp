@@ -12,19 +12,14 @@
 #include "pth.h"
 #include <utility>
 #include <bitset>
-
-
 #include "core.h"
 
 using namespace std;
 
 typedef unordered_set<string> word_list;
 typedef unordered_map<string,char> word_map;
- 
 
 unordered_map<DocID, char *> docs_str;
-
-
 // Keeps all information related to an active query
 struct Query
 {
@@ -33,6 +28,18 @@ struct Query
     MatchType match_type;
     unsigned int match_dist;
 };
+sem_t docMutex;
+sem_t docsMutex;
+sem_t mqMutex;
+unordered_map<DocID, vector<Query> > m_queries;
+
+thpool_t* pool;
+int isInit=0;
+
+typedef struct doc_thread_prams
+{
+    DocID doc_id;
+}doc_thread_prams;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -50,20 +57,9 @@ return a>b?b:a;
 inline int max(int a, int b){
 return a>b?a:b;
 }
-//map value of word
-// 00 00 exact match value 0
-// 01 01 hamming 1  value 5
-// 01 10 hamming 2   value 6
-// 01 11 hamming 3   value 7
-// 10 01 edit distance 1   value 9
-// 10 10 edit distance 2   value 10
-// 10 11 edit distance 3   value 11
 inline char word_map_value(Query *q){
     return q->match_type*4+q->match_dist;
 }
-//word a and b are said to be inclusive
-//not found 0 does not help, check not found for greater value
-// but if not found is 3 lower would help
 inline int notfoundcheck(int map_val, int q_val){
 	if (q_val==map_val) return true;
 	if (map_val> q_val){
@@ -73,12 +69,6 @@ inline int notfoundcheck(int map_val, int q_val){
 			if ((map_val&0xc) > (q_val&0xc)) return true;
 	}
 	return false;
-}
-//if word with value 1 is in found word with value greater is found too
-inline int foundcheck(int map_val, Query *q){
-    int q_val=word_map_value(q);
-    if (map_val>=q_val) return false;
-    return true;
 }
 
 
@@ -128,16 +118,25 @@ deque<Document> docs;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
-ErrorCode InitializeIndex(){return EC_SUCCESS;}
+ErrorCode InitializeIndex(){
+ 
+/*	pthread_mutex_init(&ndocsMutex,NULL);
+	pthread_cond_init (&notFull, NULL);
+	pthread_cond_init (&notEmpty, NULL);*/
+return EC_SUCCESS;}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
 ErrorCode DestroyIndex(){return EC_SUCCESS;}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
-int needCopy=0;
+
+void pauseQuery() {
+
+}
 ErrorCode StartQuery(QueryID query_id, const char* query_str, MatchType match_type, unsigned int match_dist)
 {
+    pauseQuery();
     Query query;
     query.query_id=query_id;
     strcpy(query.str, query_str);
@@ -145,7 +144,7 @@ ErrorCode StartQuery(QueryID query_id, const char* query_str, MatchType match_ty
     query.match_dist=match_dist;
     // Add this query to the active query set
     queries.push_back(query);
-    needCopy=1;
+
     return EC_SUCCESS;
 }
 
@@ -154,7 +153,7 @@ ErrorCode StartQuery(QueryID query_id, const char* query_str, MatchType match_ty
 ErrorCode EndQuery(QueryID query_id)
 {
     // Remove this query from the active query set
-    needCopy=1;
+    pauseQuery();
     unsigned int i, n=queries.size();
     for(i=0;i<n;i++)
     {
@@ -245,17 +244,6 @@ void QueryLength(Query *quer, bitset<32>  &lengths){
 }
 
 ///////////////////////////////////////////////////////////
-sem_t docMutex;
-sem_t docsMutex;
-bool isInit = 0;
-thpool_t* pool;
-
-typedef struct doc_thread_prams
-{
-    DocID doc_id;
-    //char *doc_str;// [MAX_DOC_LENGTH];
-    vector<Query> queriesCopy;
-}doc_thread_prams;
 
 void AddtoFoundWord(word_map &word_list,const char *word, Query *q){
 	char q_val=word_map_value(q);
@@ -272,15 +260,18 @@ void AddtoFoundWord(word_map &word_list,const char *word, Query *q){
 void* DocumentThread(void* data_in)
 {
     DocID doc_id = ((doc_thread_prams *)data_in)->doc_id;
-    vector<Query> queriesCopy = ((doc_thread_prams *)data_in)->queriesCopy;
-   // char* doc_str = ((doc_thread_prams *)data_in)->doc_str;
-char *doc_str;    
+    vector<Query> *queriesCopy=NULL;
+    sem_wait(&mqMutex);
+    queriesCopy = &(m_queries[(doc_id-1) /48]);
+    sem_post(&mqMutex);
+    
+    char *doc_str;    
     sem_wait(&docsMutex);
     doc_str=docs_str[doc_id];
     sem_post(&docsMutex);
 
 
-    unsigned int i, n=queriesCopy.size();
+    unsigned int i, n=queriesCopy->size();
     vector<unsigned int> query_ids;
     word_list words[MAX_WORD_LENGTH-MIN_WORD_LENGTH];
     word_map not_found_words;
@@ -288,7 +279,7 @@ char *doc_str;
     bitset<32> lengths;
 
    for(i=0;i<n;i++) {
-	Query* quer=&queriesCopy[i];
+	Query* quer=&(queriesCopy->operator[](i));
 	QueryLength(quer,lengths);
     }
     GetWords(doc_str, words, lengths);
@@ -297,7 +288,7 @@ char *doc_str;
     for(i=0;i<n;i++)
     {
         bool matching_query=true;
-        Query* quer=&queriesCopy[i];
+        Query* quer=&(queriesCopy->operator[](i));
         matching_query=CheckQuery(quer,not_found_words, lengths);
         if(!matching_query) continue;
 
@@ -400,24 +391,38 @@ char *doc_str;
     delete temp;
 
 }
-vector<Query> queriesCopy;
+
 ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 {
-    if(!isInit)
-    {
-        pool = thpool_init(24);
+if (!isInit){
+	pool = thpool_init(24);
         isInit = 1;
         sem_init(&docMutex,0,1);
 	sem_init(&docsMutex,0,1);
-    }
-    if(needCopy) {
-    queriesCopy= vector<Query>(queries);
-     needCopy=0;
-    }	
+	sem_init (&mqMutex,0,1);
+}
+
+     int g_id=(doc_id-1)/48;
+     int g_id_old=(doc_id-2)/48;
+     if(g_id!=g_id_old){
+      vector<Query> c_q;
+	for(auto it=queries.begin(); it!=queries.end();it++) {
+		Query q;
+		q.query_id=it->query_id;
+		strcpy(q.str, it->str);
+		q.match_type=it->match_type;
+		q.match_dist=it->match_dist;
+		c_q.push_back(q);
+	}
+    sem_wait(&mqMutex);
+       m_queries[g_id]=c_q;
+    sem_post(&mqMutex);
+
+
+}
 
     doc_thread_prams* thread_data= new doc_thread_prams;
     thread_data->doc_id = doc_id;
-    thread_data->queriesCopy = queriesCopy;
     
      long doc_len=strlen(doc_str);
      char* tmp=new char[doc_len+1];
@@ -425,7 +430,6 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
     sem_wait(&docsMutex);
      docs_str[doc_id]=tmp;
     sem_post(&docsMutex);
-	
 
      thpool_add_work(pool,
 	DocumentThread,(void*) thread_data);

@@ -7,9 +7,6 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <string>
-#include <pthread.h>
-#include <semaphore.h>
-#include "pth.h"
 #include <utility>
 #include <bitset>
 
@@ -243,16 +240,7 @@ void QueryLength(Query *quer, bitset<32>  &lengths){
 }
 
 ///////////////////////////////////////////////////////////
-sem_t docMutex;
-bool isInit = 0;
-thpool_t* pool;
 
-typedef struct doc_thread_prams
-{
-    DocID doc_id;
-    char *doc_str;// [MAX_DOC_LENGTH];
-    vector<Query> *queriesCopy;
-}doc_thread_prams;
 
 void AddtoFoundWord(word_map &word_list,const char *word, Query *q){
 	char q_val=word_map_value(q);
@@ -268,11 +256,8 @@ void AddtoFoundWord(word_map &word_list,const char *word, Query *q){
 
 void* DocumentThread(void* data_in)
 {
-    DocID doc_id = ((doc_thread_prams *)data_in)->doc_id;
-    vector<Query> *queriesCopy = ((doc_thread_prams *)data_in)->queriesCopy;
-    char* doc_str = ((doc_thread_prams *)data_in)->doc_str;
 
-    unsigned int i, n=queriesCopy.size();
+    unsigned int i, n=queries.size();
     vector<unsigned int> query_ids;
     word_list words[MAX_WORD_LENGTH-MIN_WORD_LENGTH];
     word_map not_found_words;
@@ -280,7 +265,7 @@ void* DocumentThread(void* data_in)
     bitset<32> lengths;
 
    for(i=0;i<n;i++) {
-	Query* quer=&queriesCopy[i];
+	Query* quer=&queries[i];
 	QueryLength(quer,lengths);
     }
 //    cout << doc_id << " "<<lengths <<endl;
@@ -392,24 +377,8 @@ void* DocumentThread(void* data_in)
 }
 ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 {
-    if(!isInit)
-    {
-        pool = thpool_init(24);
-        isInit = 1;
-        sem_init(&docMutex,0,1);
-    }
-
-    vector<Query> queriesCopy= vector<Query>(queries);
-
-    doc_thread_prams* thread_data= new doc_thread_prams;
-    thread_data->doc_id = doc_id;
-    thread_data->queriesCopy = queriesCopy;
-    strcpy(thread_data->doc_str, doc_str);
-
-    thpool_add_work(pool,
-	DocumentThread,(void*) thread_data);
-
-
+   
+    DocumentThread((void*) thread_data);
     return EC_SUCCESS;
 }
 
