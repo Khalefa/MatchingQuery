@@ -13,10 +13,12 @@
 #include <utility>
 #include <bitset>
 #include "core.h"
-
+#include "BKNode.h"
+#include "BKTree.h"
 using namespace std;
 
-typedef unordered_set<string> word_list;
+//typedef unordered_set<string> word_list;
+typedef BKTree<std::string> word_list;
 typedef unordered_map<string,char> word_map;
 
 unordered_map<DocID, char *> docs_str;
@@ -91,10 +93,14 @@ unsigned int EditDistance(const char *s1,unsigned int s1len,const char *s2,unsig
     unsigned int column[s1len+1];
     for (y = 1; y <= s1len; y++)
         column[y] = y;
+    int stop_b=limit;
     for (x = 1; x <= s2len; x++) {
         column[0] = x;
         unsigned int mini=0x7FFFFFFF;
-        for (y = 1, lastdiag = x-1; y <= s1len; y++) {
+	stop_b++;
+	int ib_en=min(stop_b, s1len);
+
+        for (y = 1, lastdiag = x-1; y <= ib_en; y++) {
             olddiag = column[y];
             column[y] = min3(column[y] + 1, column[y-1] + 1, lastdiag + (s1[y-1] == s2[x-1] ? 0 : 1));
             lastdiag = olddiag;
@@ -105,7 +111,6 @@ unsigned int EditDistance(const char *s1,unsigned int s1len,const char *s2,unsig
     }
     return(column[s1len]);
 }
-
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -320,18 +325,26 @@ void* DocumentThread(void* data_in)
 				}
 
 			}
-            if(!matching_word && words[lq-MIN_WORD_LENGTH].find(qword)!=words[lq-MIN_WORD_LENGTH].end()) {
+            if(!matching_word && words[lq-MIN_WORD_LENGTH].find(qword, 0).size()>0) {
                 matching_word=true;
                 AddtoFoundWord(found_words, qword, quer);
             }
             if(!matching_word && quer->match_type!=MT_EXACT_MATCH) {
-                for(unordered_set<string>::const_iterator it=words[lq-MIN_WORD_LENGTH].cbegin(); it!=words[lq-MIN_WORD_LENGTH].cend();it++){
-                    if(cmp(it->c_str(),qword,lq,quer->match_dist)) {
+               // for(unordered_set<string>::const_iterator it=words[lq-MIN_WORD_LENGTH].cbegin(); it!=words[lq-MIN_WORD_LENGTH].cend();it++){
+                 //   if(cmp(it->c_str(),qword,lq,quer->match_dist)) {
+			vector<string> r=words[lq-MIN_WORD_LENGTH].find(qword, quer->match_dist);
+			if(r.size()>0){
+
+			for(auto it=r.begin(); it!=r.end();it++) {
+						if(doc_id==1) printf ("%s %s \n", it->c_str(), qword);
+			if (cmp(it->c_str(), qword, lq, quer->match_dist)){		
                         matching_word=true;
 			AddtoFoundWord(found_words,qword/* it->c_str()*/, quer);
                         break;
                     }
-                }
+		}
+		}
+//                }
             }
             if  (quer->match_type==MT_EDIT_DIST && !matching_word) {
                 int s_length=lq-quer->match_dist;
@@ -340,15 +353,17 @@ void* DocumentThread(void* data_in)
                 e_length=(e_length>MAX_WORD_LENGTH)?MAX_WORD_LENGTH:e_length;
 
                 for(int len=s_length; len <=e_length && !matching_word;len++){
-                    for(unordered_set<string>::const_iterator it=words[len-MIN_WORD_LENGTH].cbegin(); it!=words[len-MIN_WORD_LENGTH].cend();it++){
-                        unsigned int edit_dist=EditDistance(qword, lq, it->c_str(), it->length(),quer->match_dist);
-                        if(edit_dist<=quer->match_dist) {
+//                    for(unordered_set<string>::const_iterator it=words[len-MIN_WORD_LENGTH].cbegin(); it!=words[len-MIN_WORD_LENGTH].cend();it++){
+  //                      unsigned int edit_dist=EditDistance(qword, lq, it->c_str(), it->length(),quer->match_dist);
+
+//                        if(edit_dist<=quer->match_dist) {
+	if(words[len-MIN_WORD_LENGTH].find(qword, quer->match_dist).size()>0){
                             matching_word=true;
   				AddtoFoundWord(found_words,qword, quer);
                             break;
                         }
 
-                    }
+  //                  }
                 }
             }
             if(!matching_word)	{
